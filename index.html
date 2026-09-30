@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CyberGuard Real Security & Diagnostics</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-analytics.js"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        cyber: {
+                            bg: '#060810',
+                            card: '#0e1222',
+                            border: '#1a2238',
+                            accent: '#00f0ff',
+                            purple: '#8a2be2',
+                            pink: '#ff007f',
+                            success: '#00ff88',
+                            warning: '#ffb700',
+                            danger: '#ff2a6d'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: #060810; }
+        ::-webkit-scrollbar-thumb { background: #1a2238; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #00f0ff; }
+
+        .glass-panel {
+            background: rgba(14, 18, 34, 0.85);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(0, 240, 255, 0.15);
+        }
+
+        .glass-card {
+            background: rgba(22, 28, 52, 0.65);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        @keyframes scanline {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(1000%); }
+        }
+        .animate-scan { animation: scanline 2.5s linear infinite; }
+
+        .bg-grid {
+            background-size: 24px 24px;
+            background-image:
+                linear-gradient(to right, rgba(0, 240, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
+        }
+
+        body {
+            background-color: #020306;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .loading-spinner {
+            border: 2px solid rgba(0, 240, 255, 0.2);
+            border-top-color: #00f0ff;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Fade out loading screen in 1.5s */
+        @keyframes fadeOut {
+            from { opacity: 1; visibility: visible; }
+            to { opacity: 0; visibility: hidden; }
+        }
+        
+        .loading-fade { animation: fadeOut 1.5s ease-out forwards; }
+    </style>
+</head>
+<body class="text-slate-200 font-sans min-h-screen flex items-center justify-center p-0 sm:p-4 bg-grid overflow-x-hidden">
+
+    <div id="mobile-app" class="w-full max-w-md h-screen sm:h-[900px] bg-cyber-bg sm:rounded-[40px] shadow-2xl shadow-cyber-accent/10 border-0 sm:border-2 border-cyber-border flex flex-col relative overflow-hidden">
+        
+        <!-- Loading Screen (Fast Fade) -->
+        <div id="loading-screen" class="absolute inset-0 bg-cyber-bg z-50 flex flex-col items-center justify-center space-y-4">
+            <div class="loading-spinner"></div>
+            <p class="text-xs text-cyber-accent font-mono">Inicializando CyberGuard...</p>
+            <p id="firebase-status" class="text-[10px] text-slate-400 font-mono">Conectando ao Firebase...</p>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="px-5 pt-3 pb-2 flex justify-between items-center text-xs font-mono text-slate-400 select-none z-30 bg-cyber-bg/90 backdrop-blur-md border-b border-white/5">
+            <span id="current-time">12:00</span>
+            <div class="flex items-center space-x-2">
+                <span id="network-type" class="text-[9px] text-cyber-accent font-semibold px-1.5 py-0.5 rounded bg-cyber-accent/10 border border-cyber-accent/30">ONLINE</span>
+                <i id="battery-icon" class="fa-solid fa-battery-half text-cyber-accent"></i>
+                <span id="battery-level-text" class="text-[10px]">--%</span>
+            </div>
+        </div>
+
+        <!-- App Header -->
+        <div class="p-4 bg-gradient-to-b from-cyber-card to-cyber-bg border-b border-cyber-border/80 z-20 space-y-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-2.5">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyber-accent via-cyber-purple to-cyber-pink flex items-center justify-center text-cyber-bg font-bold shadow-lg shadow-cyber-accent/20">
+                        <i class="fa-solid fa-shield-halved text-xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-base font-extrabold tracking-wide bg-gradient-to-r from-cyan-400 via-purple-300 to-pink-400 bg-clip-text text-transparent">CYBERGUARD REAL</h1>
+                        <p class="text-[9px] text-slate-400 font-mono tracking-wider">FIREBASE EDITION V6.0</p>
+                    </div>
+                </div>
+                <div id="overall-status-badge" class="flex items-center space-x-1.5 px-3 py-1 rounded-full bg-cyber-success/10 border border-cyber-success/30 text-cyber-success text-xs font-medium transition-all">
+                    <span class="w-2 h-2 rounded-full bg-cyber-success animate-ping"></span>
+                    <span id="status-text">Protegido</span>
+                </div>
+            </div>
+
+            <!-- Hardware Diagnostics -->
+            <div class="grid grid-cols-4 gap-1.5 font-mono">
+                <div class="glass-card p-2 rounded-xl border border-white/5 text-center">
+                    <span class="text-[9px] text-slate-400 block">CPU cores</span>
+                    <span id="cpu-cores" class="text-xs font-bold text-cyber-accent">--</span>
+                </div>
+                <div class="glass-card p-2 rounded-xl border border-white/5 text-center">
+                    <span class="text-[9px] text-slate-400 block">RAM Nav</span>
+                    <span id="ram-estimate" class="text-xs font-bold text-cyan-300">--</span>
+                </div>
+                <div class="glass-card p-2 rounded-xl border border-white/5 text-center">
+                    <span class="text-[9px] text-slate-400 block">Armaz. Real</span>
+                    <span id="storage-used" class="text-xs font-bold text-purple-300">--</span>
+                </div>
+                <div class="glass-card p-2 rounded-xl border border-white/5 text-center">
+                    <span class="text-[9px] text-slate-400 block">Bateria</span>
+                    <span id="battery-status" class="text-xs font-bold text-emerald-400">--</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content Area -->
+        <div class="flex-1 overflow-y-auto relative p-4 space-y-4" id="main-content-area">
+            
+            <!-- TAB 1: APPS MANAGEMENT -->
+            <section id="tab-apps" class="tab-content space-y-3">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-sm font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-list-check text-cyber-accent"></i> Apps Instalados
+                        </h2>
+                        <p class="text-[11px] text-slate-400">Bloqueie, pause ou remova do dispositivo</p>
+                    </div>
+                    <button onclick="toggleAddAppModal()" class="px-2.5 py-1 bg-cyber-accent/20 hover:bg-cyber-accent/30 text-cyber-accent border border-cyber-accent/40 rounded-xl text-xs font-semibold transition flex items-center gap-1">
+                        <i class="fa-solid fa-plus"></i> Novo
+                    </button>
+                </div>
+
+                <div class="flex space-x-2">
+                    <div class="relative flex-1">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-slate-400"></i>
+                        <input type="text" id="app-search" placeholder="Procurar app..." 
+                            class="w-full pl-8 pr-3 py-1.5 rounded-xl bg-cyber-card border border-cyber-border text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyber-accent">
+                    </div>
+                    <select id="app-filter" class="bg-cyber-card border border-cyber-border rounded-xl px-2 text-xs text-slate-300 focus:outline-none">
+                        <option value="all">Todos</option>
+                        <option value="blocked">Bloqueados</option>
+                        <option value="paused">Pausados</option>
+                    </select>
+                </div>
+
+                <div id="apps-list" class="space-y-2 pb-16"></div>
+            </section>
+
+            <!-- TAB 2: MONITOR & LOGS -->
+            <section id="tab-monitor" class="tab-content space-y-3 hidden">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-sm font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-bug text-cyber-purple"></i> Auditor de Código
+                        </h2>
+                        <p class="text-[11px] text-slate-400">Logs em tempo real do sistema</p>
+                    </div>
+                    <button onclick="runDeepAudit()" class="px-3 py-1.5 bg-gradient-to-r from-cyber-purple to-cyber-accent text-cyber-bg font-extrabold text-xs rounded-xl shadow-lg shadow-cyber-purple/20 hover:brightness-110 active:scale-95 transition flex items-center gap-1">
+                        <i class="fa-solid fa-magnifying-glass-code"></i>
+                        <span>Scan</span>
+                    </button>
+                </div>
+
+                <div class="glass-panel rounded-2xl p-3 border border-cyber-purple/30 relative overflow-hidden">
+                    <div class="flex items-center justify-between pb-2 mb-2 border-b border-white/10 font-mono text-xs">
+                        <span class="flex items-center gap-1.5 text-cyber-accent">
+                            <span class="w-2 h-2 rounded-full bg-cyber-accent animate-ping"></span>
+                            REALTIME_LOGS
+                        </span>
+                        <button onclick="clearLogs()" class="text-[10px] text-slate-400 hover:text-white">
+                            <i class="fa-solid fa-eraser"></i> Limpar
+                        </button>
+                    </div>
+
+                    <div id="scan-overlay" class="hidden absolute inset-0 bg-cyber-purple/10 pointer-events-none z-10">
+                        <div class="w-full h-1 bg-gradient-to-r from-transparent via-cyber-accent to-transparent animate-scan shadow-lg shadow-cyber-accent"></div>
+                    </div>
+
+                    <div id="terminal-logs" class="font-mono text-[11px] space-y-1.5 h-60 overflow-y-auto pr-1"></div>
+                </div>
+
+                <div class="glass-card p-3 rounded-2xl border border-cyber-danger/30 space-y-2">
+                    <div class="flex items-center justify-between text-xs">
+                        <span class="font-bold text-cyber-danger flex items-center gap-1.5">
+                            <i class="fa-solid fa-terminal"></i> Analisar Script
+                        </span>
+                        <span id="audit-status" class="text-[10px] font-mono text-slate-400">PRONTO</span>
+                    </div>
+                    <textarea id="code-inspector-input" rows="3" placeholder="// Cole código aqui para analisar..." 
+                        class="w-full p-2 rounded-xl bg-cyber-bg/90 font-mono text-[10px] text-cyan-300 border border-cyber-border focus:border-cyber-accent focus:outline-none"></textarea>
+                    <div class="flex gap-2">
+                        <button onclick="analyzeUserCode()" class="flex-1 py-1.5 bg-cyber-card hover:bg-cyber-border text-xs text-cyber-accent border border-cyber-accent/30 rounded-xl font-semibold transition">
+                            <i class="fa-solid fa-microscope"></i> Analisar
+                        </button>
+                        <button onclick="fixAllErrors()" class="flex-1 py-1.5 bg-gradient-to-r from-cyber-purple to-cyber-pink text-white text-xs rounded-xl font-bold transition">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> Limpar
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3: ANTI-ADWARE -->
+            <section id="tab-adware" class="tab-content space-y-3 hidden">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-sm font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-rectangle-ad text-cyber-pink"></i> Anti-Adware
+                        </h2>
+                        <p class="text-[11px] text-slate-400">Elimina anúncios e gerencia permissões</p>
+                    </div>
+                </div>
+
+                <div class="glass-panel p-3.5 rounded-2xl border border-cyber-pink/30 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2.5">
+                            <div class="w-10 h-10 rounded-xl bg-cyber-pink/20 border border-cyber-pink/40 flex items-center justify-center text-cyber-pink text-lg">
+                                <i class="fa-solid fa-bell-slash"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-xs font-bold text-white">Notificações Web</h3>
+                                <p class="text-[10px] text-slate-400">Bloqueie anúncios em tempo real</p>
+                            </div>
+                        </div>
+                        <span id="notification-perm-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300">VERIFICANDO</span>
+                    </div>
+
+                    <div class="flex gap-2">
+                        <button onclick="checkNotificationPermission()" class="flex-1 py-2 bg-cyber-border/80 hover:bg-cyber-border text-xs text-slate-200 rounded-xl transition font-medium">
+                            <i class="fa-solid fa-rotate"></i> Testar
+                        </button>
+                        <button onclick="requestNotificationBlock()" class="flex-1 py-2 bg-cyber-pink/20 hover:bg-cyber-pink/30 text-pink-300 border border-cyber-pink/40 rounded-xl text-xs font-bold transition">
+                            <i class="fa-solid fa-shield-xmark"></i> Bloquear
+                        </button>
+                    </div>
+                </div>
+
+                <div class="glass-card p-3.5 rounded-2xl border border-white/5 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-xs font-bold text-white flex items-center gap-1.5">
+                                <i class="fa-solid fa-broom text-cyber-accent"></i> Limpeza de Cache
+                            </h3>
+                            <p class="text-[10px] text-slate-400">Elimina rastreadores locais</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                        <div class="bg-cyber-bg p-2 rounded-xl border border-white/5">
+                            <span class="text-[10px] text-slate-400 block">LocalStorage:</span>
+                            <span id="localstorage-count" class="font-mono font-bold text-cyber-accent">--</span>
+                        </div>
+                        <div class="bg-cyber-bg p-2 rounded-xl border border-white/5">
+                            <span class="text-[10px] text-slate-400 block">SessionStorage:</span>
+                            <span id="sessionstorage-count" class="font-mono font-bold text-purple-300">--</span>
+                        </div>
+                    </div>
+
+                    <button onclick="cleanRealWebStorage()" class="w-full py-2.5 bg-gradient-to-r from-cyber-accent to-cyber-purple text-cyber-bg font-extrabold text-xs rounded-xl shadow-lg shadow-cyber-accent/20 hover:brightness-110 active:scale-95 transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-trash-arrow-up"></i> Limpar Dados
+                    </button>
+                </div>
+
+                <div class="glass-card p-3 rounded-2xl border border-white/5 space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold text-slate-200">Teste de Pop-up</span>
+                        <span class="text-[10px] text-cyber-pink font-mono">SHIELD</span>
+                    </div>
+                    <p class="text-[11px] text-slate-400">Testa bloqueador de janelas do navegador:</p>
+                    <button onclick="testPopupBlocker()" class="w-full py-2 bg-cyber-border hover:bg-slate-700 text-slate-200 text-xs rounded-xl font-medium transition">
+                        <i class="fa-solid fa-window-restore"></i> Disparar Teste
+                    </button>
+                </div>
+            </section>
+
+        </div>
+
+        <!-- Contact Footer (If Loading) -->
+        <div id="contact-footer" class="hidden text-center py-2 text-[10px] text-slate-500 font-mono border-t border-white/5">
+            <p>Suporte: <span class="text-cyan-400">contact@cyberguard.com</span></p>
+        </div>
+
+        <!-- Add App Modal -->
+        <div id="add-app-modal" class="hidden absolute inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+            <div class="glass-panel w-full bg-cyber-card border border-cyber-accent/40 rounded-2xl p-4 space-y-3">
+                <div class="flex justify-between items-center border-b border-white/10 pb-2">
+                    <h3 class="text-xs font-bold text-white flex items-center gap-1.5">
+                        <i class="fa-solid fa-mobile-screen-button text-cyber-accent"></i> Novo App
+                    </h3>
+                    <button onclick="toggleAddAppModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="space-y-2 text-xs">
+                    <div>
+                        <label class="block text-[10px] text-slate-400 mb-1">Nome</label>
+                        <input type="text" id="new-app-name" placeholder="Ex: Meu App" class="w-full p-2 bg-cyber-bg border border-cyber-border rounded-xl text-slate-200 focus:outline-none focus:border-cyber-accent">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] text-slate-400 mb-1">Pacote</label>
+                        <input type="text" id="new-app-pkg" placeholder="Ex: com.meuapp" class="w-full p-2 bg-cyber-bg border border-cyber-border rounded-xl text-slate-200 focus:outline-none focus:border-cyber-accent">
+                    </div>
+                </div>
+                <div class="flex gap-2 pt-2">
+                    <button onclick="toggleAddAppModal()" class="flex-1 py-2 bg-cyber-border text-slate-300 rounded-xl text-xs font-semibold">Cancelar</button>
+                    <button onclick="saveNewApp()" class="flex-1 py-2 bg-cyber-accent text-cyber-bg rounded-xl text-xs font-extrabold">Salvar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast Notification -->
+        <div id="toast" class="absolute top-16 left-4 right-4 z-40 transition-all duration-300 transform -translate-y-10 opacity-0 pointer-events-none">
+            <div id="toast-bg" class="glass-panel px-4 py-2.5 rounded-xl border flex items-center space-x-3 shadow-xl">
+                <i id="toast-icon" class="fa-solid fa-circle-info text-cyber-accent text-lg"></i>
+                <span id="toast-message" class="text-xs font-medium text-slate-100">Notificação</span>
+            </div>
+        </div>
+
+        <!-- Bottom Navigation -->
+        <nav class="h-16 glass-panel border-t border-cyber-border/80 grid grid-cols-3 items-center px-2 z-30">
+            <button onclick="switchTab('apps')" id="nav-apps" class="nav-btn flex flex-col items-center justify-center space-y-1 text-cyber-accent transition">
+                <i class="fa-solid fa-list-check text-lg"></i>
+                <span class="text-[10px] font-medium">Apps</span>
+            </button>
+            <button onclick="switchTab('monitor')" id="nav-monitor" class="nav-btn flex flex-col items-center justify-center space-y-1 text-slate-500 hover:text-slate-300 transition">
+                <i class="fa-solid fa-bug text-lg"></i>
+                <span class="text-[10px] font-medium">Logs</span>
+            </button>
+            <button onclick="switchTab('adware')" id="nav-adware" class="nav-btn flex flex-col items-center justify-center space-y-1 text-slate-500 hover:text-slate-300 transition">
+                <i class="fa-solid fa-rectangle-ad text-lg"></i>
+                <span class="text-[10px] font-medium">Anti-Adware</span>
+            </button>
+        </nav>
+
+    </div>
+
+    <script>
+        // Auto-hide loading screen after 1.5 seconds
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                const loadingScreen = document.getElementById('loading-screen');
+                loadingScreen.classList.add('loading-fade');
+                setTimeout(() => {
+                    loadingScreen.style.display = 'none';
+                }, 1500);
+            }, 500);
+        });
+
+        // Fallback: Hide loading screen after 3 seconds no matter what
+        setTimeout(function() {
+            const loadingScreen = document.getElementById('loading-screen');
+            if (loadingScreen && loadingScreen.style.display !== 'none') {
+                loadingScreen.classList.add('loading-fade');
+                setTimeout(() => {
+                    loadingScreen.style.display = 'none';
+                }, 1500);
+            }
+        }, 3000);
+    </script>
+
+    <script src="js/firebase-config.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
